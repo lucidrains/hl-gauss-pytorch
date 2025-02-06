@@ -1,6 +1,6 @@
 <img src="./fig2.png" width="400px"></img>
 
-## HL Gauss - Pytorch
+## HL Gauss - Pytorch (wip)
 
 The proposed Gaussian Histogram Loss (HL-Gauss) proposed by Imani et al. with a few convenient wrappers, in Pytorch.
 
@@ -20,11 +20,15 @@ from hl_gauss_pytorch import HLGaussLoss
 
 hl_gauss = HLGaussLoss(0., 5., 32, sigma = 0.5)
 
-logits = torch.randn(1, 16, 32).requires_grad_()
-targets = torch.randint(0, 5, (1, 16)).float()
+logits = torch.randn(3, 16, 32).requires_grad_()
+targets = torch.randint(0, 5, (3, 16)).float()
 
 loss = hl_gauss(logits, targets)
 loss.backward()
+
+# after much training
+
+pred_target = hl_gauss(logits) # (3, 16)
 ```
 
 ## Citations

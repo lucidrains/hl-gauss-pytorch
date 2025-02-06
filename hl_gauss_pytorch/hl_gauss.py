@@ -6,6 +6,13 @@ from torch.nn import Module, ModuleList
 
 import einx
 
+# helper functions
+
+def exists(v):
+    return v is not None
+
+# proposed gaussian histogram loss by Imani et al. https://arxiv.org/abs/1806.04613
+
 class HLGaussLoss(Module):
     """
     lifted from Appendix A in https://arxiv.org/abs/2403.03950
@@ -39,7 +46,21 @@ class HLGaussLoss(Module):
         return einx.divide('... bins, ... -> ... bins', bin_probs, z)
 
     def transform_from_probs(self, probs):
-        return (probs * centers).sum(dim = -1)
+        return (probs * self.centers).sum(dim = -1)
 
-    def forward(self, logits, target):
-        return F.cross_entropy(logits, self.transform_to_probs(target))
+    def forward(
+        self,
+        logits,
+        target = None
+    ):
+
+        return_loss = exists(target)
+
+        if return_loss:
+            return F.cross_entropy(logits, self.transform_to_probs(target))
+
+        # if targets are not given, return the predicted value
+
+        pred_probs = logits.softmax(dim = -1)
+
+        return self.transform_from_probs(pred_probs)

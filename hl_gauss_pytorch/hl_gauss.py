@@ -14,6 +14,9 @@ from einops import rearrange
 def exists(v):
     return v is not None
 
+def log(t, eps = 1e-20):
+    return t.clamp(min = eps).log()
+
 # proposed gaussian histogram loss by Imani et al. https://arxiv.org/abs/1806.04613
 
 class HLGaussLoss(Module):
@@ -39,6 +42,10 @@ class HLGaussLoss(Module):
         self.register_buffer('support', support)
         self.register_buffer('centers', (support[:-1] - support[1:]) / 2)
         self.register_buffer('sigma_times_sqrt_two', tensor(2.0).sqrt() * sigma)
+
+    def transform_to_logprobs(self, values):
+        probs = self.transform_to_probs(values)
+        return log(probs)
 
     def transform_to_probs(self, target):
         cdf_evals = erf(einx.subtract('bins, ... -> ... bins', self.support, target) / self.sigma_times_sqrt_two)

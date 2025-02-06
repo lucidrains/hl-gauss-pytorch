@@ -2,7 +2,7 @@
 
 ## HL Gauss - Pytorch
 
-The proposed Gaussian Histogram Loss (HL-Gauss) proposed by [Imani et al.](https://proceedings.mlr.press/v80/imani18a/imani18a.pdf) with a few convenient wrappers, in Pytorch.
+The Gaussian Histogram Loss (HL-Gauss) proposed by [Imani et al.](https://proceedings.mlr.press/v80/imani18a/imani18a.pdf) with a few convenient wrappers, in Pytorch.
 
 A team at Deepmind wrote a [paper](https://arxiv.org/abs/2403.03950) with a lot of positive findings for its use in value-based RL.
 

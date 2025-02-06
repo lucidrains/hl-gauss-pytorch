@@ -76,10 +76,13 @@ class HLGaussLayer(Module):
         self,
         dim,
         *,
+        norm_input = False,
         hl_gauss_loss: dict | HLGaussLoss | None = None,
         use_regression = False, # can be disabled to compare with regular MSE regression
     ):
         super().__init__()
+
+        self.norm = nn.RMSNorm(dim = dim) if norm_input else nn.Identity()
 
         if isinstance(hl_gauss_loss, dict):
             hl_gauss_loss = HLGaussLoss(**hl_gauss_loss)
@@ -103,6 +106,7 @@ class HLGaussLayer(Module):
     ):
         assert not self.use_classification
 
+        embed = self.norm(embed)
         pred_value = self.to_pred(embed)
         pred_value = rearrange(pred_value, '... 1 -> ...')
 
@@ -124,6 +128,7 @@ class HLGaussLayer(Module):
             assert not return_logits, 'no logits to return when using regression'
             return self.forward_mse_regression(embed, target)
 
+        embed = self.norm(embed)
         logits = self.to_pred(embed)
 
         if return_logits:

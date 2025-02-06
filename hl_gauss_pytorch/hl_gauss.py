@@ -86,6 +86,7 @@ class HLGaussLayer(Module):
         norm_input = False,
         hl_gauss_loss: dict | HLGaussLoss | None = None,
         use_regression = False, # can be disabled to compare with regular MSE regression
+        regress_activation = nn.Identity(),
     ):
         super().__init__()
 
@@ -106,6 +107,10 @@ class HLGaussLayer(Module):
 
         self.use_classification = use_classification
 
+        # if using regression, activation to apply after the projection
+
+        self.regress_activation = regress_activation
+
     def forward_mse_regression(
         self,
         embed,
@@ -114,7 +119,9 @@ class HLGaussLayer(Module):
         assert not self.use_classification
 
         embed = self.norm(embed)
+
         pred_value = self.to_pred(embed)
+        pred_value = self.regress_activation(pred_value)
         pred_value = rearrange(pred_value, '... 1 -> ...')
 
         return_loss = exists(target)

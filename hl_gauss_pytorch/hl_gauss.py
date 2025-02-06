@@ -53,6 +53,7 @@ class HLGaussLoss(Module):
         logits,
         target = None
     ):
+        assert logits.shape[-1] == self.num_bins
 
         return_loss = exists(target)
 

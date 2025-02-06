@@ -5,6 +5,7 @@ from torch import nn, tensor, linspace
 from torch.nn import Module, ModuleList
 
 import einx
+from einops import rearrange
 
 # helper functions
 
@@ -65,3 +66,55 @@ class HLGaussLoss(Module):
         pred_probs = logits.softmax(dim = -1)
 
         return self.transform_from_probs(pred_probs)
+
+# a layer that contains a projection from the embedding of a network to the predicted bins
+
+class HLGaussLayer(Module):
+    def __init__(
+        self,
+        dim,
+        *,
+        disable = False,  # can be disabled to compare with regular MSE regression
+        **hl_gauss_loss_kwargs
+    ):
+        super().__init__()
+
+        hl_gauss_loss = HLGaussLoss(**hl_gauss_loss_kwargs)
+
+        use_hl_gauss = not disable
+        dim_pred = hl_gauss_loss.num_bins if use_hl_gauss else 1
+
+        self.to_pred = nn.Linear(dim, dim_pred, bias = False)
+
+        self.use_hl_gauss = use_hl_gauss
+        self.hl_gauss_loss = hl_gauss_loss
+
+    def forward_mse_regression(
+        self,
+        embed,
+        target = None
+    ):
+        assert not self.use_hl_gauss
+
+        pred_value = self.to_pred(embed)
+        pred_value = rearrange(pred_value, '... 1 -> ...')
+
+        return_loss = exists(target)
+
+        if not return_loss:
+            return pred_value
+
+        return F.mse_loss(pred_value, target)
+
+    def forward(
+        self,
+        embed,
+        target = None
+    ):
+
+        if not self.use_hl_gauss:
+            return self.forward_mse_regression(embed, target)
+
+        logits = self.to_pred(embed)
+
+        return self.hl_gauss_loss(logits, target)

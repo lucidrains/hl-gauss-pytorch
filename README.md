@@ -20,7 +20,12 @@ The `HLGaussLoss` module as defined in Appendix A. of the [Stop Regressing paper
 import torch
 from hl_gauss_pytorch import HLGaussLoss
 
-hl_gauss = HLGaussLoss(0., 5., 32, sigma = 0.5)
+hl_gauss = HLGaussLoss(
+    min_value = 0.,
+    max_value = 5.,
+    num_bins = 32,
+    sigma = 0.5
+)
 
 logits = torch.randn(3, 16, 32).requires_grad_()
 targets = torch.randint(0, 5, (3, 16)).float()
@@ -31,6 +36,37 @@ loss.backward()
 # after much training
 
 pred_target = hl_gauss(logits) # (3, 16)
+```
+
+For a convenient layer that predicts from embedding to logits, import `HLGaussLayer`
+
+```python
+import torch
+from hl_gauss_pytorch import HLGaussLayer
+
+hl_gauss_layer = HLGaussLayer(
+    dim = 256,          # input embedding dimension
+    min_value = 0.,
+    max_value = 5.,
+    num_bins = 32,
+    sigma = 0.5,
+)
+
+embed = torch.randn(7, 256)
+targets = torch.randint(0, 5, (7,)).float()
+
+loss = hl_gauss_layer(embed, targets)
+loss.backward()
+
+# after much training
+
+pred_target = hl_gauss_layer(embed) # (7,)
+```
+
+For ablating the proposal, you can make the `HLGaussLayer` fall back to regular regression by setting `disable = True`, keeping the code above unchanged
+
+```python
+HLGaussLayer(..., disable = True)
 ```
 
 ## Citations

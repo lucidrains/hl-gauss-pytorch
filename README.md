@@ -14,6 +14,8 @@ $ pip install hl-gauss-pytorch
 
 ## Usage
 
+The `HLGaussLoss` module as defined in Appendix A. of the [Stop Regressing paper](https://arxiv.org/abs/2403.03950)
+
 ```python
 import torch
 from hl_gauss_pytorch import HLGaussLoss

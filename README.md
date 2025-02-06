@@ -1,4 +1,4 @@
-<img src="./fig2.png" width="400px"></img>
+<img src="./fig2.png" width="500px"></img>
 
 ## HL Gauss - Pytorch
 

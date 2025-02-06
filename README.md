@@ -45,11 +45,13 @@ import torch
 from hl_gauss_pytorch import HLGaussLayer
 
 hl_gauss_layer = HLGaussLayer(
-    dim = 256,          # input embedding dimension
-    min_value = 0.,
-    max_value = 5.,
-    num_bins = 32,
-    sigma = 0.5,
+    dim = 256, # input embedding dimension
+    hl_gauss_loss = dict(
+        min_value = 0.,
+        max_value = 5.,
+        num_bins = 32,
+        sigma = 0.5,
+    )
 )
 
 embed = torch.randn(7, 256)
@@ -63,10 +65,10 @@ loss.backward()
 pred_target = hl_gauss_layer(embed) # (7,)
 ```
 
-For ablating the proposal, you can make the `HLGaussLayer` fall back to regular regression by setting `disable = True`, keeping the code above unchanged
+For ablating the proposal, you can make the `HLGaussLayer` fall back to regular regression by setting `use_regression = True`, keeping the code above unchanged
 
 ```python
-HLGaussLayer(..., disable = True)
+HLGaussLayer(..., use_regression = True)
 ```
 
 ## Citations

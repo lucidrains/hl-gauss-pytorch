@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 from torch.special import erf
 import torch.nn.functional as F
@@ -74,27 +76,32 @@ class HLGaussLayer(Module):
         self,
         dim,
         *,
-        disable = False,  # can be disabled to compare with regular MSE regression
-        **hl_gauss_loss_kwargs
+        hl_gauss_loss: dict | HLGaussLoss | None = None,
+        use_regression = False, # can be disabled to compare with regular MSE regression
     ):
         super().__init__()
 
-        hl_gauss_loss = HLGaussLoss(**hl_gauss_loss_kwargs)
+        if isinstance(hl_gauss_loss, dict):
+            hl_gauss_loss = HLGaussLoss(**hl_gauss_loss)
 
-        use_hl_gauss = not disable
-        dim_pred = hl_gauss_loss.num_bins if use_hl_gauss else 1
+        self.hl_gauss_loss = hl_gauss_loss
 
+        use_classification = not use_regression
+        assert not (use_classification and not exists(hl_gauss_loss)), '`hl_gauss_loss` is not defined, only regression is permitted'
+
+        # linear projection to either logits for classification, or single value for regression
+
+        dim_pred = hl_gauss_loss.num_bins if use_classification else 1
         self.to_pred = nn.Linear(dim, dim_pred, bias = False)
 
-        self.use_hl_gauss = use_hl_gauss
-        self.hl_gauss_loss = hl_gauss_loss
+        self.use_classification = use_classification
 
     def forward_mse_regression(
         self,
         embed,
         target = None
     ):
-        assert not self.use_hl_gauss
+        assert not self.use_classification
 
         pred_value = self.to_pred(embed)
         pred_value = rearrange(pred_value, '... 1 -> ...')
@@ -113,8 +120,8 @@ class HLGaussLayer(Module):
         return_logits = False
     ):
 
-        if not self.use_hl_gauss:
-            assert not return_logits
+        if not self.use_classification:
+            assert not return_logits, 'no logits to return when using regression'
             return self.forward_mse_regression(embed, target)
 
         logits = self.to_pred(embed)

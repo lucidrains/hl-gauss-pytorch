@@ -4,6 +4,27 @@ The proposed Gaussian Histogram Loss (HL-Gauss) proposed by Imani et al. with a 
 
 A team at Deepmind wrote a [paper](https://arxiv.org/abs/2403.03950) with a lot of positive findings for its use in value-based RL.
 
+## Install
+
+```bash
+$ pip install hl-gauss-pytorch
+```
+
+## Usage
+
+```python
+import torch
+from hl_gauss_pytorch import HLGaussLoss
+
+hl_gauss = HLGaussLoss(0., 5., 32, sigma = 0.5)
+
+logits = torch.randn(1, 16, 32).requires_grad_()
+targets = torch.randint(0, 5, (1, 16)).float()
+
+loss = hl_gauss(logits, targets)
+loss.backward()
+```
+
 ## Citations
 
 ```bibtex

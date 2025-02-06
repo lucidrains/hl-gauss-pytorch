@@ -109,12 +109,17 @@ class HLGaussLayer(Module):
     def forward(
         self,
         embed,
-        target = None
+        target = None,
+        return_logits = False
     ):
 
         if not self.use_hl_gauss:
+            assert not return_logits
             return self.forward_mse_regression(embed, target)
 
         logits = self.to_pred(embed)
+
+        if return_logits:
+            return logits
 
         return self.hl_gauss_loss(logits, target)

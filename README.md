@@ -1,3 +1,5 @@
+<img src="./fig2.png" width="400px"></img>
+
 ## HL Gauss - Pytorch
 
 The proposed Gaussian Histogram Loss (HL-Gauss) proposed by Imani et al. with a few convenient wrappers, in Pytorch.

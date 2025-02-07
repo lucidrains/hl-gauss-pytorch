@@ -1,6 +1,6 @@
 [project]
 name = "hl-gauss-pytorch"
-version = "0.0.9"
+version = "0.1.0"
 description = "HL Gauss - Pytorch"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
@@ -33,7 +33,9 @@ Homepage = "https://pypi.org/project/hl-gauss-pytorch/"
 Repository = "https://github.com/lucidrains/hl-gauss-pytorch"
 
 [project.optional-dependencies]
-examples = []
+examples = [
+    "tqdm"
+]
 test = [
     "pytest"
 ]

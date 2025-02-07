@@ -14,6 +14,9 @@ from einops import rearrange
 def exists(v):
     return v is not None
 
+def default(v, d):
+    return v if exists(v) else d
+
 def log(t, eps = 1e-20):
     return t.clamp(min = eps).log()
 
@@ -29,18 +32,24 @@ class HLGaussLoss(Module):
         min_value,
         max_value,
         num_bins,
-        sigma
+        sigma = None,
+        default_sigma_to_bin_ratio = 2.
     ):
         super().__init__()
         self.min_value = min_value
         self.max_value = max_value
+
+        assert num_bins > 2
         self.num_bins = num_bins
-        self.sigma = sigma
 
         support = linspace(min_value, max_value, num_bins + 1).float()
+        bin_size = support[1] - support[0]
+
+        sigma = default(sigma, int(default_sigma_to_bin_ratio * bin_size)) # default sigma to ratio of 2. with bin size, from fig 6 of https://arxiv.org/html/2402.13425v2
+        self.sigma = sigma
 
         self.register_buffer('support', support)
-        self.register_buffer('centers', (support[:-1] - support[1:]) / 2)
+        self.register_buffer('centers', support[:-1] + (support[:-1] - support[1:]) / 2)
         self.register_buffer('sigma_times_sqrt_two', tensor(2.0).sqrt() * sigma)
 
     def transform_to_logprobs(self, values):
@@ -83,14 +92,14 @@ class HLGaussLayer(Module):
         self,
         dim,
         *,
-        norm_input = False,
+        norm_embed = False,
         hl_gauss_loss: dict | HLGaussLoss | None = None,
         use_regression = False, # can be disabled to compare with regular MSE regression
         regress_activation = nn.Identity(),
     ):
         super().__init__()
 
-        self.norm = nn.RMSNorm(dim = dim) if norm_input else nn.Identity()
+        self.norm = nn.RMSNorm(dim) if norm_embed else nn.Identity()
 
         if isinstance(hl_gauss_loss, dict):
             hl_gauss_loss = HLGaussLoss(**hl_gauss_loss)

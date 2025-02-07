@@ -102,6 +102,7 @@ class HLGaussLayer(Module):
         *,
         norm_embed = False,
         hl_gauss_loss: dict | HLGaussLoss | None = None,
+        regress_loss_fn: Module | Callable = nn.MSELoss(),
         use_regression = False, # can be disabled to compare with regular MSE regression
         regress_activation = nn.Identity(),
         aux_regress_loss_weight = 0.
@@ -127,6 +128,7 @@ class HLGaussLayer(Module):
 
         # if using regression, activation to apply after the projection
 
+        self.regress_loss_fn = regress_loss_fn
         self.regress_activation = regress_activation
 
         # regression auxiliary loss - todo: take a day doing experiments and figure out if it is helpful
@@ -152,7 +154,7 @@ class HLGaussLayer(Module):
         if not return_loss:
             return pred_value
 
-        return F.mse_loss(pred_value, target)
+        return self.regress_loss_fn(pred_value, target)
 
     def forward(
         self,
@@ -181,7 +183,8 @@ class HLGaussLayer(Module):
 
         if self.hax_aux_regress_loss:
             pred_value = self.hl_gauss_loss(logits)
-            regress_loss = F.mse_loss(pred_value, target) * self.aux_regress_loss_weight
-            loss = loss + regress_loss
+            regress_loss = self.regress_loss_fn(pred_value, target)
+
+            loss = loss + regress_loss * self.aux_regress_loss_weight
 
         return loss

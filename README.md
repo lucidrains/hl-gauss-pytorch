@@ -74,6 +74,7 @@ HLGaussLayer(..., use_regression = True)
 ## Todo
 
 - [ ] use welford to keep track of running mean and std dev, in order to see if possible to dynamically set the hl gauss hparams online based only on bins + desired bin size / sigma ratio
+- [ ] custom non-uniformly spaced centers
 
 ## Citations
 

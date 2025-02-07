@@ -3,14 +3,16 @@ from torch import nn
 import torch.nn.functional as F
 from torch.optim import Adam
 
+torch.autograd.set_detect_anomaly(True)
+
 from tqdm import tqdm
 from einops.layers.torch import Rearrange
 
 # constants
 
 NUM_BATCHES = 10_000
-BATCH_SIZE = 64
-LEARNING_RATE = 3e-4
+BATCH_SIZE = 32
+LEARNING_RATE = 1e-4
 EVAL_EVERY = 500
 
 NUM_BINS = 100
@@ -52,7 +54,7 @@ class MLP(nn.Module):
         embed = self.to_embed(inp)
         return self.hl_gauss_layer(embed, target)
 
-model = MLP(DIM_HIDDEN)
+model = MLP(DIM_HIDDEN).cuda()
 
 # optimizer
 
@@ -66,7 +68,7 @@ def fun(t):
 def cycle(batch_size):
     while True:
         x = torch.randn(BATCH_SIZE)
-        yield (x, fun(x))
+        yield (x.cuda(), fun(x).cuda())
 
 dl = cycle(BATCH_SIZE)
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from math import sqrt
 
 import torch
 from torch.special import erf
@@ -6,7 +7,7 @@ import torch.nn.functional as F
 from torch import nn, tensor, linspace
 from torch.nn import Module, ModuleList
 
-import einx
+from einx import subtract, divide
 from einops import rearrange
 
 # helper functions
@@ -33,9 +34,11 @@ class HLGaussLoss(Module):
         max_value,
         num_bins,
         sigma = None,
-        default_sigma_to_bin_ratio = 2.
+        default_sigma_to_bin_ratio = 2.,
+        eps = 1e-10
     ):
         super().__init__()
+        self.eps = eps
         self.min_value = min_value
         self.max_value = max_value
 
@@ -45,28 +48,32 @@ class HLGaussLoss(Module):
         support = linspace(min_value, max_value, num_bins + 1).float()
         bin_size = support[1] - support[0]
 
-        sigma = default(sigma, int(default_sigma_to_bin_ratio * bin_size)) # default sigma to ratio of 2. with bin size, from fig 6 of https://arxiv.org/html/2402.13425v2
+        sigma = default(sigma, default_sigma_to_bin_ratio * bin_size) # default sigma to ratio of 2. with bin size, from fig 6 of https://arxiv.org/html/2402.13425v2
         self.sigma = sigma
+        assert self.sigma > 0.
 
-        self.register_buffer('support', support)
-        self.register_buffer('centers', support[:-1] + (support[:-1] - support[1:]) / 2)
-        self.register_buffer('sigma_times_sqrt_two', tensor(2.0).sqrt() * sigma)
+        self.register_buffer('support', support, persistent = False)
+        self.register_buffer('centers', support[:-1] + (support[:-1] - support[1:]) / 2, persistent = False)
+        self.sigma_times_sqrt_two = sqrt(2.) * sigma
 
     def transform_to_logprobs(self, values):
         probs = self.transform_to_probs(values)
         return log(probs)
 
     def transform_to_probs(self, target):
-        cdf_evals = erf(einx.subtract('bins, ... -> ... bins', self.support, target) / self.sigma_times_sqrt_two)
+        assert self.sigma > 0.
+
+        cdf_evals = erf(subtract('bins, ... -> ... bins', self.support, target) / self.sigma_times_sqrt_two)
 
         z = cdf_evals[..., -1] - cdf_evals[..., 0]
         bin_probs = cdf_evals[..., 1:] - cdf_evals[..., :-1]
 
-        return einx.divide('... bins, ... -> ... bins', bin_probs, z)
+        return divide('... bins, ... -> ... bins', bin_probs, z.clamp(min = self.eps))
 
     def transform_from_probs(self, probs):
         return (probs * self.centers).sum(dim = -1)
 
+    @torch.autocast('cuda', enabled = False)
     def forward(
         self,
         logits,
@@ -77,7 +84,8 @@ class HLGaussLoss(Module):
         return_loss = exists(target)
 
         if return_loss:
-            return F.cross_entropy(logits, self.transform_to_probs(target))
+            target_probs = self.transform_to_probs(target)
+            return F.cross_entropy(logits, target_probs)
 
         # if targets are not given, return the predicted value
 

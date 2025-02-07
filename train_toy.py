@@ -15,9 +15,12 @@ BATCH_SIZE = 32
 LEARNING_RATE = 1e-4
 EVAL_EVERY = 500
 
-NUM_BINS = 100
+NUM_BINS = 150
 DIM_HIDDEN = 64
+SIGMA = None # if not set, will default to bin size to sigma ratio of 2.
+
 USE_REGRESSION = False
+AUX_REGRESS_LOSS_WEIGHT = 0.1
 
 # functions
 
@@ -46,7 +49,8 @@ class MLP(nn.Module):
             hl_gauss_loss = dict(
                 min_value = -1.1,
                 max_value = 1.1,
-                num_bins = NUM_BINS
+                num_bins = NUM_BINS,
+                sigma = SIGMA
             )
         )
 

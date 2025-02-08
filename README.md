@@ -6,6 +6,8 @@ The Gaussian Histogram Loss (HL-Gauss) proposed by [Imani et al.](https://procee
 
 A team at Deepmind wrote a [paper](https://arxiv.org/abs/2403.03950) with a lot of positive findings for its use in value-based RL.
 
+Put into action [here](https://github.com/lucidrains/phasic-policy-gradient), seems to work well
+
 ## Install
 
 ```bash

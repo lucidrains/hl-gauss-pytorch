@@ -245,9 +245,12 @@ class HLGaussLossFromRunningStats(Module):
     def forward(
         self,
         logits,
-        target = None
+        target = None,
+        freeze_stats = None
     ):
-        if self.training and not self.freeze_stats and exists(target):
+        freeze_stats = default(freeze_stats, self.freeze_stats)
+
+        if self.training and not freeze_stats and exists(target):
             self.running_stats(target)
             self.set_hl_gauss_loss_from_running()
 

@@ -88,6 +88,10 @@ class HLGaussLossFromSupport(Module):
         self.register_buffer('centers', (support[:-1] + support[1:]) / 2, persistent = False)
         self.sigma_times_sqrt_two = sqrt(2.) * sigma
 
+    def transform_from_logits(self, logit):
+        prob = logit.softmax(dim = -1)
+        return self.transform_from_probs(prob)
+
     def transform_to_logprobs(self, values):
         probs = self.transform_to_probs(values)
         return log(probs)
@@ -145,9 +149,7 @@ class HLGaussLossFromSupport(Module):
 
         # if targets are not given, return the predicted value
 
-        pred_probs = logits.softmax(dim = -1)
-
-        return self.transform_from_probs(pred_probs)
+        return self.transform_from_logits(logits)
 
 # running stats using welford algorithm 1962
 

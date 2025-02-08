@@ -264,27 +264,36 @@ class HLGaussLayer(Module):
         dim,
         *,
         norm_embed = False,
-        hl_gauss_loss: dict | HLGaussLossFromSupport | HLGaussLossFromRunningStats | None = None,
+        hl_gauss_loss: dict | HLGaussLossFromSupport | None = None,
+        hl_gauss_loss_running_stats: dict | HLGaussLossFromRunningStats | None = None,
         regress_loss_fn: Module | Callable = nn.MSELoss(),
         use_regression = False, # can be disabled to compare with regular MSE regression
         regress_activation = nn.Identity(),
         aux_regress_loss_weight = 0.
     ):
         super().__init__()
+        assert exists(hl_gauss_loss) or exists(hl_gauss_loss_running_stats)
+
+        # normalization before projection
 
         self.norm = nn.RMSNorm(dim) if norm_embed else nn.Identity()
+
+        # instantiate hl gauss loss function
+
+        if isinstance(hl_gauss_loss_running_stats, dict):
+            hl_gauss_loss_running_stats = HLGaussLossFromRunningStats(**hl_gauss_loss_running_stats)
 
         if isinstance(hl_gauss_loss, dict):
             hl_gauss_loss = HLGaussLoss(**hl_gauss_loss)
 
-        self.hl_gauss_loss = hl_gauss_loss
+        self.hl_gauss_loss = default(hl_gauss_loss_running_stats, hl_gauss_loss)
 
         use_classification = not use_regression
-        assert not (use_classification and not exists(hl_gauss_loss)), '`hl_gauss_loss` is not defined, only regression is permitted'
+        assert not (use_classification and not exists(self.hl_gauss_loss)), '`hl_gauss_loss` is not defined, only regression is permitted'
 
         # linear projection to either logits for classification, or single value for regression
 
-        dim_pred = hl_gauss_loss.num_bins if use_classification else 1
+        dim_pred = self.hl_gauss_loss.num_bins if use_classification else 1
         self.to_pred = nn.Linear(dim, dim_pred, bias = False)
 
         self.use_classification = use_classification

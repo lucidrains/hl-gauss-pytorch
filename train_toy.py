@@ -24,6 +24,8 @@ USE_RUNNING_STATS = True
 USE_REGRESSION = False
 AUX_REGRESS_LOSS_WEIGHT = 0.
 
+device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+
 # functions
 
 def divisible_by(num, den):
@@ -51,24 +53,28 @@ class MLP(nn.Module):
         )
 
         if running_stats:
-            hl_gauss_loss = HLGaussLossFromRunningStats(
-                num_bins = 200,
-                std_dev_range = 10.,
-                clamp_to_range = True
+            hl_gauss_loss_kwargs = dict(
+                hl_gauss_loss_running_stats = HLGaussLossFromRunningStats(
+                    num_bins = 200,
+                    std_dev_range = 10.,
+                    clamp_to_range = True
+                )
             )
         else:
-            hl_gauss_loss = dict(
-                min_value = -1.1,
-                max_value = 1.1,
-                num_bins = 200,
-                sigma_to_bin_ratio = 2.
+            hl_gauss_loss_kwargs = dict(
+                hl_gauss_loss = dict(
+                    min_value = -1.1,
+                    max_value = 1.1,
+                    num_bins = 200,
+                    sigma_to_bin_ratio = 2.
+                )
             )
 
         self.hl_gauss_layer = HLGaussLayer(
             dim_hidden,
             use_regression = USE_REGRESSION,
             norm_embed = True,
-            hl_gauss_loss = hl_gauss_loss
+            **hl_gauss_loss_kwargs
         )
 
     def forward(self, inp, target = None):
@@ -78,7 +84,7 @@ class MLP(nn.Module):
 model = MLP(
     DIM_HIDDEN,
     running_stats = USE_RUNNING_STATS
-).cuda()
+).to(device)
 
 # optimizer
 
@@ -92,7 +98,7 @@ def fun(t):
 def cycle(batch_size):
     while True:
         x = torch.randn(batch_size)
-        yield (x.cuda(), fun(x).cuda())
+        yield (x.to(device), fun(x).to(device))
 
 dl = cycle(BATCH_SIZE)
 

@@ -4,7 +4,7 @@ from math import sqrt
 import torch
 from torch.special import erf
 import torch.nn.functional as F
-from torch import nn, tensor, linspace
+from torch import nn, tensor, linspace, is_tensor
 from torch.nn import Module, ModuleList
 
 from einx import subtract, divide
@@ -27,41 +27,56 @@ def log(t, eps = 1e-20):
 
 # proposed gaussian histogram loss by Imani et al. https://arxiv.org/abs/1806.04613
 
-class HLGaussLoss(Module):
+def HLGaussLoss(
+    min_value,
+    max_value,
+    num_bins,
+    sigma = None,
+    sigma_to_bin_ratio = None,
+    eps = 1e-10
+):
+    support = linspace(min_value, max_value, num_bins + 1).float()
+
+    loss_fn = HLGaussLossFromSupport(
+        support,
+        sigma = sigma,
+        sigma_to_bin_ratio = sigma_to_bin_ratio,
+        eps = eps
+    )
+
+    return loss_fn
+
+class HLGaussLossFromSupport(Module):
     """
     lifted from Appendix A in https://arxiv.org/abs/2403.03950
     """
 
     def __init__(
         self,
-        min_value,
-        max_value,
-        num_bins,
+        support: list[float] | Tensor,
         sigma = None,
         sigma_to_bin_ratio = None,
         eps = 1e-10
     ):
         super().__init__()
+        self.eps = eps
         assert exists(sigma) or exists(sigma_to_bin_ratio), 'either `sigma` or `sigma_to_bin_ratio` is set but not both'
 
-        self.eps = eps
-        self.min_value = min_value
-        self.max_value = max_value
+        if not is_tensor(support):
+            support = tensor(support)
 
-        assert num_bins > 2
-        self.num_bins = num_bins
-
-        support = linspace(min_value, max_value, num_bins + 1).float()
-        bin_size = support[1] - support[0]
+        mean_bin_size = (support[1:] - support[:-1]).mean().item()
 
         sigma_to_bin_ratio = default(sigma_to_bin_ratio, DEFAULT_SIGMA_TO_BIN_RATIO)
 
-        sigma = default(sigma, sigma_to_bin_ratio * bin_size) # default sigma to ratio of 2. with bin size, from fig 6 of https://arxiv.org/html/2402.13425v2
+        sigma = default(sigma, sigma_to_bin_ratio * mean_bin_size) # default sigma to ratio of 2. with bin size, from fig 6 of https://arxiv.org/html/2402.13425v2
+
+        self.num_bins = support.numel() - 1
         self.sigma = sigma
         assert self.sigma > 0.
 
         self.register_buffer('support', support, persistent = False)
-        self.register_buffer('centers', support[:-1] + bin_size / 2, persistent = False)
+        self.register_buffer('centers', (support[:-1] + support[1:]) / 2, persistent = False)
         self.sigma_times_sqrt_two = sqrt(2.) * sigma
 
     def transform_to_logprobs(self, values):

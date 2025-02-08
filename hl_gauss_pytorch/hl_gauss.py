@@ -80,8 +80,8 @@ class HLGaussLossFromSupport(Module):
         assert self.sigma > 0.
 
         self.num_bins = support.numel() - 1
-        self.min_value = support[0]
-        self.max_value = support[-1]
+        self.min_value = support[0].item()
+        self.max_value = support[-1].item()
         self.clamp_to_range = clamp_to_range
 
         self.register_buffer('support', support, persistent = False)

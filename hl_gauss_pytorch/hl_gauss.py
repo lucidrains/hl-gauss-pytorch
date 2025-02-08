@@ -63,7 +63,7 @@ class HLGaussLossFromSupport(Module):
     ):
         super().__init__()
         self.eps = eps
-        assert exists(sigma) or exists(sigma_to_bin_ratio), 'either `sigma` or `sigma_to_bin_ratio` is set but not both'
+        assert not (exists(sigma) and exists(sigma_to_bin_ratio)), 'either `sigma` or `sigma_to_bin_ratio` is set but not both'
 
         if not is_tensor(support):
             support = tensor(support)

@@ -61,14 +61,16 @@ class HLGaussLoss(Module):
         assert self.sigma > 0.
 
         self.register_buffer('support', support, persistent = False)
-        self.register_buffer('centers', support[:-1] + (support[:-1] - support[1:]) / 2, persistent = False)
+        self.register_buffer('centers', support[:-1] + bin_size / 2, persistent = False)
         self.sigma_times_sqrt_two = sqrt(2.) * sigma
 
     def transform_to_logprobs(self, values):
         probs = self.transform_to_probs(values)
         return log(probs)
 
-    def transform_to_probs(self, target):
+    def transform_to_probs(self, target, eps = None):
+        eps = default(eps, self.eps)
+
         assert self.sigma > 0.
 
         cdf_evals = erf(subtract('bins, ... -> ... bins', self.support, target) / self.sigma_times_sqrt_two)
@@ -76,7 +78,7 @@ class HLGaussLoss(Module):
         z = cdf_evals[..., -1] - cdf_evals[..., 0]
         bin_probs = cdf_evals[..., 1:] - cdf_evals[..., :-1]
 
-        return divide('... bins, ... -> ... bins', bin_probs, z.clamp(min = self.eps))
+        return divide('... bins, ... -> ... bins', bin_probs, z.clamp(min = eps))
 
     def transform_from_probs(self, probs):
         return (probs * self.centers).sum(dim = -1)

@@ -6,6 +6,8 @@ from torch.optim import Adam
 from tqdm import tqdm
 from einops.layers.torch import Rearrange
 
+from hl_gauss_pytorch.hl_gauss import HLGaussLayer, HLGaussLossFromRunningStats
+
 # constants
 
 NUM_BATCHES = 10_000
@@ -16,6 +18,8 @@ EVAL_EVERY = 500
 NUM_BINS = 200
 DIM_HIDDEN = 64
 SIGMA = None # if not set, will default to bin size to sigma ratio of 2.
+
+USE_RUNNING_STATS = True
 
 USE_REGRESSION = False
 AUX_REGRESS_LOSS_WEIGHT = 0.
@@ -30,7 +34,11 @@ def divisible_by(num, den):
 from hl_gauss_pytorch.hl_gauss import HLGaussLayer
 
 class MLP(nn.Module):
-    def __init__(self, dim_hidden = 64):
+    def __init__(
+        self,
+        dim_hidden = 64,
+        running_stats = False
+    ):
         super().__init__()
         self.to_embed = nn.Sequential(
             Rearrange('... -> ... 1'),
@@ -42,23 +50,35 @@ class MLP(nn.Module):
             nn.SiLU()
         )
 
+        if running_stats:
+            hl_gauss_loss = HLGaussLossFromRunningStats(
+                num_bins = 200,
+                std_dev_range = 10.,
+                clamp_to_range = True
+            )
+        else:
+            hl_gauss_loss = dict(
+                min_value = -1.1,
+                max_value = 1.1,
+                num_bins = 200,
+                sigma_to_bin_ratio = 2.
+            )
+
         self.hl_gauss_layer = HLGaussLayer(
             dim_hidden,
             use_regression = USE_REGRESSION,
             norm_embed = True,
-            hl_gauss_loss = dict(
-                min_value = -1.1,
-                max_value = 1.1,
-                num_bins = NUM_BINS,
-                sigma_to_bin_ratio = 2.
-            )
+            hl_gauss_loss = hl_gauss_loss
         )
 
     def forward(self, inp, target = None):
         embed = self.to_embed(inp)
         return self.hl_gauss_layer(embed, target)
 
-model = MLP(DIM_HIDDEN).cuda()
+model = MLP(
+    DIM_HIDDEN,
+    running_stats = USE_RUNNING_STATS
+).cuda()
 
 # optimizer
 

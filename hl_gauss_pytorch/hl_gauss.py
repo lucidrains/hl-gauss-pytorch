@@ -33,7 +33,8 @@ def HLGaussLoss(
     num_bins,
     sigma = None,
     sigma_to_bin_ratio = None,
-    eps = 1e-10
+    eps = 1e-10,
+    clamp_to_range = False
 ):
     support = linspace(min_value, max_value, num_bins + 1).float()
 
@@ -41,7 +42,8 @@ def HLGaussLoss(
         support,
         sigma = sigma,
         sigma_to_bin_ratio = sigma_to_bin_ratio,
-        eps = eps
+        eps = eps,
+        clamp_to_range = clamp_to_range
     )
 
     return loss_fn
@@ -56,7 +58,8 @@ class HLGaussLossFromSupport(Module):
         support: list[float] | Tensor,
         sigma = None,
         sigma_to_bin_ratio = None,
-        eps = 1e-10
+        eps = 1e-10,
+        clamp_to_range = False
     ):
         super().__init__()
         self.eps = eps
@@ -65,15 +68,21 @@ class HLGaussLossFromSupport(Module):
         if not is_tensor(support):
             support = tensor(support)
 
+        assert ((support[1:] - support[:-1]) > 0.).all(), 'support must be increasing in value throughout'
+
         mean_bin_size = (support[1:] - support[:-1]).mean().item()
 
         sigma_to_bin_ratio = default(sigma_to_bin_ratio, DEFAULT_SIGMA_TO_BIN_RATIO)
 
         sigma = default(sigma, sigma_to_bin_ratio * mean_bin_size) # default sigma to ratio of 2. with bin size, from fig 6 of https://arxiv.org/html/2402.13425v2
 
-        self.num_bins = support.numel() - 1
         self.sigma = sigma
         assert self.sigma > 0.
+
+        self.num_bins = support.numel() - 1
+        self.min_value = support[0]
+        self.max_value = support[-1]
+        self.clamp_to_range = clamp_to_range
 
         self.register_buffer('support', support, persistent = False)
         self.register_buffer('centers', (support[:-1] + support[1:]) / 2, persistent = False)
@@ -121,6 +130,9 @@ class HLGaussLossFromSupport(Module):
     ):
         return_loss = exists(target)
 
+        if return_loss and self.clamp_to_range:
+            target = target.clamp(min = self.min_value, max = self.max_value)
+
         if return_loss and logits.shape == target.shape:
             return self.forward_kl_div(logits, target)
 
@@ -136,6 +148,111 @@ class HLGaussLossFromSupport(Module):
 
         return self.transform_from_probs(pred_probs)
 
+# running stats using welford algorithm 1962
+
+class RunningMeanVariance(Module):
+    def __init__(
+        self,
+        eps = 1e-5,
+        time_dilate_factor = 1.
+    ):
+        super().__init__()
+        self.eps = eps
+        self.time_dilate_factor = time_dilate_factor
+
+        self.register_buffer('step', tensor(1))
+        self.register_buffer('running_mean', tensor(100.))
+        self.register_buffer('running_estimate_p', tensor(1.))
+
+    def reset_step(self, reset_value = 0.):
+        self.step.copy_(reset_value)
+
+    @property
+    def time(self):
+        return self.step / self.time_dilate_factor
+
+    @property
+    def running_variance(self):
+        p = self.running_estimate_p
+
+        if self.step == 1:
+            return torch.ones_like(p)
+
+        return (p / (self.time - 1. / self.time_dilate_factor))
+
+    @property
+    def running_std_dev(self):
+        return self.running_variance.clamp(min = self.eps).sqrt()
+
+    def forward(self, values):
+        time = self.time.item()
+        mean = self.running_mean
+        estimate_p = self.running_estimate_p
+
+        new_mean = values.mean()
+        delta = new_mean - mean
+
+        mean = mean + delta / time
+        estimate_p = estimate_p + (new_mean - mean) * delta
+
+        self.running_mean.copy_(mean)
+        self.running_estimate_p.copy_(estimate_p)
+
+        self.step.add_(1)
+
+# a hl gauss loss that automatically determines the supports from the running mean and variance
+
+class HLGaussLossFromRunningStats(Module):
+    def __init__(
+        self,
+        num_bins,
+        sigma_to_bin_ratio = 2.,
+        std_dev_range = 3,
+        running_stats_kwargs: dict = dict(),
+        freeze_stats = False,
+        clamp_to_range = False
+    ):
+        super().__init__()
+        assert num_bins >= (std_dev_range * 2)
+        self.running_stats = RunningMeanVariance(**running_stats_kwargs)
+
+        self.num_bins = num_bins
+        self.std_dev_range = std_dev_range
+        self.clamp_to_range = clamp_to_range
+        self.sigma_to_bin_ratio = sigma_to_bin_ratio
+
+        self.register_buffer('dummy', tensor(0), persistent = False)
+
+        self.freeze_stats = freeze_stats
+        self.set_hl_gauss_loss_from_running()
+
+    def set_hl_gauss_loss_from_running(self):
+
+        running_mean = self.running_stats.running_mean.item()
+        running_std_dev = self.running_stats.running_std_dev.item()
+
+        min_value = (running_mean - running_std_dev * self.std_dev_range)
+        max_value = (running_mean + running_std_dev * self.std_dev_range)
+
+        support = linspace(min_value, max_value, self.num_bins + 1, device = self.dummy.device)
+
+        self.hl_gauss_loss = HLGaussLossFromSupport(
+            support = support,
+            sigma_to_bin_ratio = self.sigma_to_bin_ratio,
+            clamp_to_range = self.clamp_to_range
+        )
+ 
+    def forward(
+        self,
+        logits,
+        target = None
+    ):
+        if self.training and not self.freeze_stats and exists(target):
+            self.running_stats(target)
+            self.set_hl_gauss_loss_from_running()
+
+        return self.hl_gauss_loss(logits, target)
+
 # a layer that contains a projection from the embedding of a network to the predicted bins
 
 class HLGaussLayer(Module):
@@ -144,7 +261,7 @@ class HLGaussLayer(Module):
         dim,
         *,
         norm_embed = False,
-        hl_gauss_loss: dict | HLGaussLoss | None = None,
+        hl_gauss_loss: dict | HLGaussLossFromSupport | HLGaussLossFromRunningStats | None = None,
         regress_loss_fn: Module | Callable = nn.MSELoss(),
         use_regression = False, # can be disabled to compare with regular MSE regression
         regress_activation = nn.Identity(),

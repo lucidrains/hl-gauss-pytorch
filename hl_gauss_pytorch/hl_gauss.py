@@ -10,6 +10,10 @@ from torch.nn import Module, ModuleList
 from einx import subtract, divide
 from einops import rearrange
 
+# constants
+
+DEFAULT_SIGMA_TO_BIN_RATIO = 2.
+
 # helper functions
 
 def exists(v):
@@ -34,10 +38,12 @@ class HLGaussLoss(Module):
         max_value,
         num_bins,
         sigma = None,
-        default_sigma_to_bin_ratio = 2.,
+        sigma_to_bin_ratio = None,
         eps = 1e-10
     ):
         super().__init__()
+        assert exists(sigma) or exists(sigma_to_bin_ratio), 'either `sigma` or `sigma_to_bin_ratio` is set but not both'
+
         self.eps = eps
         self.min_value = min_value
         self.max_value = max_value
@@ -48,7 +54,9 @@ class HLGaussLoss(Module):
         support = linspace(min_value, max_value, num_bins + 1).float()
         bin_size = support[1] - support[0]
 
-        sigma = default(sigma, default_sigma_to_bin_ratio * bin_size) # default sigma to ratio of 2. with bin size, from fig 6 of https://arxiv.org/html/2402.13425v2
+        sigma_to_bin_ratio = default(sigma_to_bin_ratio, DEFAULT_SIGMA_TO_BIN_RATIO)
+
+        sigma = default(sigma, sigma_to_bin_ratio * bin_size) # default sigma to ratio of 2. with bin size, from fig 6 of https://arxiv.org/html/2402.13425v2
         self.sigma = sigma
         assert self.sigma > 0.
 

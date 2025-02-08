@@ -3,8 +3,6 @@ from torch import nn
 import torch.nn.functional as F
 from torch.optim import Adam
 
-torch.autograd.set_detect_anomaly(True)
-
 from tqdm import tqdm
 from einops.layers.torch import Rearrange
 
@@ -15,12 +13,12 @@ BATCH_SIZE = 32
 LEARNING_RATE = 1e-4
 EVAL_EVERY = 500
 
-NUM_BINS = 150
+NUM_BINS = 200
 DIM_HIDDEN = 64
 SIGMA = None # if not set, will default to bin size to sigma ratio of 2.
 
 USE_REGRESSION = False
-AUX_REGRESS_LOSS_WEIGHT = 0.1
+AUX_REGRESS_LOSS_WEIGHT = 0.
 
 # functions
 
@@ -39,6 +37,8 @@ class MLP(nn.Module):
             nn.Linear(1, dim_hidden),
             nn.SiLU(),
             nn.Linear(dim_hidden, dim_hidden),
+            nn.SiLU(),
+            nn.Linear(dim_hidden, dim_hidden),
             nn.SiLU()
         )
 
@@ -50,7 +50,7 @@ class MLP(nn.Module):
                 min_value = -1.1,
                 max_value = 1.1,
                 num_bins = NUM_BINS,
-                sigma = SIGMA
+                sigma_to_bin_ratio = 2.
             )
         )
 
@@ -71,7 +71,7 @@ def fun(t):
 
 def cycle(batch_size):
     while True:
-        x = torch.randn(BATCH_SIZE)
+        x = torch.randn(batch_size)
         yield (x.cuda(), fun(x).cuda())
 
 dl = cycle(BATCH_SIZE)

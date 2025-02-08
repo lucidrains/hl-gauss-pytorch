@@ -1,6 +1,6 @@
 [project]
 name = "hl-gauss-pytorch"
-version = "0.1.8"
+version = "0.1.9"
 description = "HL Gauss - Pytorch"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }

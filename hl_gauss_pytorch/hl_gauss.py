@@ -126,7 +126,8 @@ class HLGaussLossFromSupport(Module):
     def forward(
         self,
         logits,
-        target = None
+        target = None,
+        reduction = 'mean'
     ):
         return_loss = exists(target)
 
@@ -140,7 +141,7 @@ class HLGaussLossFromSupport(Module):
 
         if return_loss:
             target_probs = self.transform_to_probs(target)
-            return F.cross_entropy(logits, target_probs)
+            return F.cross_entropy(logits, target_probs, reduction = reduction)
 
         # if targets are not given, return the predicted value
 

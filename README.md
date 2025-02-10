@@ -26,7 +26,8 @@ hl_gauss = HLGaussLoss(
     min_value = 0.,
     max_value = 5.,
     num_bins = 32,
-    sigma = 0.5
+    sigma = 0.5,
+    clamp_to_range = True # this was added because if any values fall outside of the bins, the loss is 0 with the current logic
 )
 
 logits = torch.randn(3, 16, 32).requires_grad_()

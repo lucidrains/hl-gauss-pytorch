@@ -119,21 +119,6 @@ class HLGaussLossFromSupport(Module):
     def transform_from_probs(self, probs):
         return (probs * self.centers).sum(dim = -1)
 
-    def forward_kl_div(
-        self,
-        pred,
-        target
-    ):
-        """
-        allow for predicted value to be passed in, in which it will also be binned to probs and kl div used with target
-        """
-        assert pred.shape == target.shape
-
-        logprob_pred = self.transform_to_logprobs(pred)
-        logprob_target = self.transform_to_logprobs(target)
-
-        return F.kl_div(logprob_pred, logprob_target, log_target = True, reduction = 'mean')
-
     @torch.autocast('cuda', enabled = False)
     def forward(
         self,
@@ -147,7 +132,7 @@ class HLGaussLossFromSupport(Module):
             target = target.clamp(min = self.min_value, max = self.max_value)
 
         if return_loss and logits.shape == target.shape:
-            return self.forward_kl_div(logits, target)
+            logits = self.transform_to_logprobs(logits)
 
         assert logits.shape[-1] == self.num_bins
 

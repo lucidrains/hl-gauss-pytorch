@@ -34,8 +34,16 @@ def HLGaussLoss(
     sigma = None,
     sigma_to_bin_ratio = None,
     eps = 1e-10,
-    clamp_to_range = False
+    clamp_to_range = False,
+    min_max_value_on_bin_center = False
 ):
+    assert num_bins > 1, 'number of bins must be greater than 1'
+
+    if min_max_value_on_bin_center:
+        adjustment = (max_value - min_value) / ((num_bins - 1) * 2)
+        min_value -= adjustment
+        max_value += adjustment
+
     support = linspace(min_value, max_value, num_bins + 1).float()
 
     loss_fn = HLGaussLossFromSupport(

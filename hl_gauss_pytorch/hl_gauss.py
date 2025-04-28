@@ -325,11 +325,11 @@ class HLGaussLayer(Module):
 
         return_loss = exists(target)
 
-        if return_logits or not return_loss:
-            return pred_value
-
         if return_value_and_logits:
             return pred_value, pred_value
+
+        if return_logits or not return_loss:
+            return pred_value
 
         return self.regress_loss_fn(pred_value, target)
 

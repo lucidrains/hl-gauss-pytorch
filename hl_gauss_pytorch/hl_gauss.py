@@ -304,10 +304,16 @@ class HLGaussLayer(Module):
         self.hax_aux_regress_loss = aux_regress_loss_weight > 0.
         self.aux_regress_loss_weight = aux_regress_loss_weight
 
+        # loss fn
+
+        self.loss_fn = self.hl_gauss_loss if use_classification else F.mse_loss
+
     def forward_mse_regression(
         self,
         embed,
-        target = None
+        target = None,
+        return_logits = False, # 'logits' are just the raw predicted value
+        return_value_and_logits = False
     ):
         assert not self.use_classification
 
@@ -319,8 +325,11 @@ class HLGaussLayer(Module):
 
         return_loss = exists(target)
 
-        if not return_loss:
+        if return_logits or not return_loss:
             return pred_value
+
+        if return_value_and_logits:
+            return pred_value, pred_value
 
         return self.regress_loss_fn(pred_value, target)
 
@@ -328,12 +337,17 @@ class HLGaussLayer(Module):
         self,
         embed,
         target = None,
-        return_logits = False
+        return_logits = False,
+        return_value_and_logits = False
     ):
 
         if not self.use_classification:
-            assert not return_logits, 'no logits to return when using regression'
-            return self.forward_mse_regression(embed, target)
+            return self.forward_mse_regression(
+                embed,
+                target,
+                return_logits = return_logits,
+                return_value_and_logits = return_value_and_logits
+            )
 
         embed = self.norm(embed)
         logits = self.to_pred(embed)
@@ -345,7 +359,11 @@ class HLGaussLayer(Module):
 
         if not return_loss:
             pred_value = self.hl_gauss_loss(logits)
-            return pred_value
+
+            if not return_value_and_logits:
+                return pred_value
+
+            return pred_value, logits
 
         loss = self.hl_gauss_loss(logits, target)
 

@@ -138,6 +138,11 @@ class HLGaussLossFromSupport(Module):
 
         if return_loss:
             target_probs = self.transform_to_probs(target)
+
+            if logits.ndim > 2:
+                logits = rearrange(logits, 'b ... l -> b l ...')
+                target_probs = rearrange(target_probs, 'b ... l -> b l ...')
+
             return F.cross_entropy(logits, target_probs, reduction = reduction)
 
         # if targets are not given, return the predicted value

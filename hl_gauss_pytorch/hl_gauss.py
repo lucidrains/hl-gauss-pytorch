@@ -124,7 +124,9 @@ class HLGaussLossFromSupport(Module):
         self,
         logits,
         target = None,
-        reduction = 'mean'
+        *,
+        mask = None,
+        reduction = None
     ):
         return_loss = exists(target)
 
@@ -136,18 +138,26 @@ class HLGaussLossFromSupport(Module):
 
         assert logits.shape[-1] == self.num_bins
 
-        if return_loss:
-            target_probs = self.transform_to_probs(target)
-
-            if logits.ndim > 2:
-                logits = rearrange(logits, 'b ... l -> b l ...')
-                target_probs = rearrange(target_probs, 'b ... l -> b l ...')
-
-            return F.cross_entropy(logits, target_probs, reduction = reduction)
-
         # if targets are not given, return the predicted value
 
-        return self.transform_from_logits(logits)
+        if not return_loss:
+            return self.transform_from_logits(logits)
+
+        target_probs = self.transform_to_probs(target)
+
+        if logits.ndim > 2:
+            logits = rearrange(logits, 'b ... l -> b l ...')
+            target_probs = rearrange(target_probs, 'b ... l -> b l ...')
+
+        reduction = default(reduction, 'mean' if not exists(mask) else 'none')
+        loss = F.cross_entropy(logits, target_probs, reduction = reduction)
+
+        if not exists(mask):
+            return loss
+
+        loss = loss[mask]
+
+        return loss.mean()
 
 # running stats using welford algorithm 1962
 

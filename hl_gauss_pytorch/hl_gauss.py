@@ -352,6 +352,7 @@ class HLGaussLayer(Module):
         self,
         embed,
         target = None,
+        mask = None,
         return_logits = False,
         return_value_and_logits = False
     ):
@@ -380,9 +381,11 @@ class HLGaussLayer(Module):
 
             return pred_value, logits
 
-        loss = self.hl_gauss_loss(logits, target)
+        loss = self.hl_gauss_loss(logits, target, mask = mask)
 
         if self.hax_aux_regress_loss:
+            assert not exists(mask)
+
             pred_value = self.hl_gauss_loss(logits)
             regress_loss = self.regress_loss_fn(pred_value, target)
 

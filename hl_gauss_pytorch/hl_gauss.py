@@ -274,6 +274,7 @@ class HLGaussLayer(Module):
         self,
         dim,
         *,
+        network: Module = nn.Identity(),
         norm_embed = False,
         hl_gauss_loss: dict | HLGaussLossFromSupport | None = None,
         hl_gauss_loss_running_stats: dict | HLGaussLossFromRunningStats | None = None,
@@ -284,6 +285,11 @@ class HLGaussLayer(Module):
     ):
         super().__init__()
         assert exists(hl_gauss_loss) or exists(hl_gauss_loss_running_stats)
+
+        # a network before the linear prediction
+        # for a deeper value network off a transformer or some other backbone
+
+        self.network = network
 
         # normalization before projection
 
@@ -333,6 +339,7 @@ class HLGaussLayer(Module):
         assert not self.use_classification
 
         embed = self.norm(embed)
+        embed = self.network(embed)
 
         pred_value = self.to_pred(embed)
         pred_value = self.regress_activation(pred_value)
@@ -366,6 +373,8 @@ class HLGaussLayer(Module):
             )
 
         embed = self.norm(embed)
+        embed = self.network(embed)
+
         logits = self.to_pred(embed)
 
         if return_logits:

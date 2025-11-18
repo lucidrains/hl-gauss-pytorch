@@ -1,8 +1,12 @@
 import pytest
+param = pytest.mark.parametrize
 
 import torch
 
-def test_hl_gauss():
+@param('use_regression', (False, True))
+def test_hl_gauss(
+    use_regression
+):
     from hl_gauss_pytorch import HLGaussLayer
 
     from x_mlps_pytorch import MLP
@@ -10,6 +14,7 @@ def test_hl_gauss():
     hl_gauss_layer = HLGaussLayer(
         network = MLP(256, 128),
         dim = 128,
+        use_regression = use_regression,
         hl_gauss_loss = dict(
             min_value = -100.,
             max_value = 100.,

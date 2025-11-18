@@ -278,7 +278,7 @@ class HLGaussLayer(Module):
         norm_embed = False,
         hl_gauss_loss: dict | HLGaussLossFromSupport | None = None,
         hl_gauss_loss_running_stats: dict | HLGaussLossFromRunningStats | None = None,
-        regress_loss_fn: Module | Callable = nn.MSELoss(),
+        regress_loss_fn: Callable = F.mse_loss,
         use_regression = False, # can be disabled to compare with regular MSE regression
         regress_activation = nn.Identity(),
         aux_regress_loss_weight = 0.
@@ -322,7 +322,7 @@ class HLGaussLayer(Module):
 
         # regression auxiliary loss - todo: take a day doing experiments and figure out if it is helpful
 
-        self.hax_aux_regress_loss = aux_regress_loss_weight > 0.
+        self.has_aux_regress_loss = aux_regress_loss_weight > 0.
         self.aux_regress_loss_weight = aux_regress_loss_weight
 
         # loss fn
@@ -334,7 +334,8 @@ class HLGaussLayer(Module):
         embed,
         target = None,
         return_logits = False, # 'logits' are just the raw predicted value
-        return_value_and_logits = False
+        return_value_and_logits = False,
+        reduction = 'mean'
     ):
         assert not self.use_classification
 
@@ -353,7 +354,7 @@ class HLGaussLayer(Module):
         if return_logits or not return_loss:
             return pred_value
 
-        return self.regress_loss_fn(pred_value, target)
+        return self.regress_loss_fn(pred_value, target, reduction = reduction)
 
     def forward(
         self,
@@ -361,7 +362,8 @@ class HLGaussLayer(Module):
         target = None,
         mask = None,
         return_logits = False,
-        return_value_and_logits = False
+        return_value_and_logits = False,
+        reduction = 'mean'
     ):
 
         if not self.use_classification:
@@ -369,7 +371,8 @@ class HLGaussLayer(Module):
                 embed,
                 target,
                 return_logits = return_logits,
-                return_value_and_logits = return_value_and_logits
+                return_value_and_logits = return_value_and_logits,
+                reduction = reduction
             )
 
         embed = self.norm(embed)
@@ -390,13 +393,13 @@ class HLGaussLayer(Module):
 
             return pred_value, logits
 
-        loss = self.hl_gauss_loss(logits, target, mask = mask)
+        loss = self.hl_gauss_loss(logits, target, mask = mask, reduction = reduction)
 
-        if self.hax_aux_regress_loss:
+        if self.has_aux_regress_loss:
             assert not exists(mask)
 
-            pred_value = self.hl_gauss_loss(logits)
-            regress_loss = self.regress_loss_fn(pred_value, target)
+            pred_value = self.hl_gauss_loss(logits, reduction = reduction)
+            regress_loss = self.regress_loss_fn(pred_value, target, reduction = reduction)
 
             loss = loss + regress_loss * self.aux_regress_loss_weight
 

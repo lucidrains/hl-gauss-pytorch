@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Callable
 from math import sqrt
 
 import torch
@@ -6,6 +7,8 @@ from torch.special import erf
 import torch.nn.functional as F
 from torch import nn, tensor, linspace, is_tensor
 from torch.nn import Module, ModuleList
+
+from torch_einops_utils import maybe
 
 from einx import subtract, divide
 from einops import rearrange
@@ -25,6 +28,9 @@ def default(v, d):
 def log(t, eps = 1e-20):
     return t.clamp(min = eps).log()
 
+def cast_tensor(t):
+    return t if is_tensor(t) else tensor(t)
+
 # proposed gaussian histogram loss by Imani et al. https://arxiv.org/abs/1806.04613
 
 def HLGaussLoss(
@@ -35,9 +41,14 @@ def HLGaussLoss(
     sigma_to_bin_ratio = None,
     eps = 1e-10,
     clamp_to_range = False,
-    min_max_value_on_bin_center = False
+    min_max_value_on_bin_center = False,
+    transform: Callable | None = None,
+    inverse_transform: Callable | None = None
 ):
     assert num_bins > 1, 'number of bins must be greater than 1'
+
+    min_value = maybe(transform)(cast_tensor(min_value)).item()
+    max_value = maybe(transform)(cast_tensor(max_value)).item()
 
     if min_max_value_on_bin_center:
         adjustment = (max_value - min_value) / ((num_bins - 1) * 2)
@@ -51,7 +62,9 @@ def HLGaussLoss(
         sigma = sigma,
         sigma_to_bin_ratio = sigma_to_bin_ratio,
         eps = eps,
-        clamp_to_range = clamp_to_range
+        clamp_to_range = clamp_to_range,
+        transform = transform,
+        inverse_transform = inverse_transform
     )
 
     return loss_fn
@@ -67,10 +80,21 @@ class HLGaussLossFromSupport(Module):
         sigma = None,
         sigma_to_bin_ratio = None,
         eps = 1e-10,
-        clamp_to_range = False
+        clamp_to_range = False,
+        transform: Callable | None = None,
+        inverse_transform: Callable | None = None
     ):
         super().__init__()
         self.eps = eps
+        self.transform = transform
+        self.inverse_transform = inverse_transform
+
+        assert exists(transform) == exists(inverse_transform), 'both `transform` and `inverse_transform` must be passed in if either is'
+
+        if exists(transform):
+            dummy_target = torch.randn(10) * 10
+            assert torch.allclose(inverse_transform(transform(dummy_target)), dummy_target, atol = 1e-4), 'inverse_transform must mathematically be the exact inverse of transform'
+
         assert not (exists(sigma) and exists(sigma_to_bin_ratio)), 'either `sigma` or `sigma_to_bin_ratio` is set but not both'
 
         if not is_tensor(support):
@@ -105,6 +129,11 @@ class HLGaussLossFromSupport(Module):
         return log(probs)
 
     def transform_to_probs(self, target, eps = None):
+        target = maybe(self.transform)(target)
+
+        if self.clamp_to_range:
+            target = target.clamp(min = self.min_value, max = self.max_value)
+
         eps = default(eps, self.eps)
 
         assert self.sigma > 0.
@@ -117,7 +146,8 @@ class HLGaussLossFromSupport(Module):
         return divide('... bins, ... -> ... bins', bin_probs, z.clamp(min = eps))
 
     def transform_from_probs(self, probs):
-        return (probs * self.centers).sum(dim = -1)
+        pred_value = (probs * self.centers).sum(dim = -1)
+        return maybe(self.inverse_transform)(pred_value)
 
     @torch.autocast('cuda', enabled = False)
     def forward(
@@ -129,9 +159,6 @@ class HLGaussLossFromSupport(Module):
         reduction = None
     ):
         return_loss = exists(target)
-
-        if return_loss and self.clamp_to_range:
-            target = target.clamp(min = self.min_value, max = self.max_value)
 
         if return_loss and logits.shape == target.shape:
             logits = self.transform_to_logprobs(logits)
@@ -221,7 +248,9 @@ class HLGaussLossFromRunningStats(Module):
         std_dev_range = 3,
         running_stats_kwargs: dict = dict(),
         freeze_stats = False,
-        clamp_to_range = False
+        clamp_to_range = False,
+        transform: Callable | None = None,
+        inverse_transform: Callable | None = None
     ):
         super().__init__()
         assert num_bins >= (std_dev_range * 2)
@@ -231,6 +260,9 @@ class HLGaussLossFromRunningStats(Module):
         self.std_dev_range = std_dev_range
         self.clamp_to_range = clamp_to_range
         self.sigma_to_bin_ratio = sigma_to_bin_ratio
+
+        self.transform = transform
+        self.inverse_transform = inverse_transform
 
         self.register_buffer('dummy', tensor(0), persistent = False)
 
@@ -250,9 +282,11 @@ class HLGaussLossFromRunningStats(Module):
         self.hl_gauss_loss = HLGaussLossFromSupport(
             support = support,
             sigma_to_bin_ratio = self.sigma_to_bin_ratio,
-            clamp_to_range = self.clamp_to_range
+            clamp_to_range = self.clamp_to_range,
+            transform = self.transform,
+            inverse_transform = self.inverse_transform
         )
- 
+
     def forward(
         self,
         logits,
@@ -262,7 +296,8 @@ class HLGaussLossFromRunningStats(Module):
         freeze_stats = default(freeze_stats, self.freeze_stats)
 
         if self.training and not freeze_stats and exists(target):
-            self.running_stats(target)
+            stats_target = maybe(self.transform)(target)
+            self.running_stats(stats_target)
             self.set_hl_gauss_loss_from_running()
 
         return self.hl_gauss_loss(logits, target)

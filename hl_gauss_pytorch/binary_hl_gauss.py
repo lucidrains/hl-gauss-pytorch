@@ -4,11 +4,10 @@ from math import sqrt
 import torch
 from torch.special import erf
 import torch.nn.functional as F
-from torch import nn, tensor, stack, linspace
-from torch.nn import Module, ModuleList
+from torch import tensor, stack, linspace
+from torch.nn import Module
 
 from einx import subtract
-from einops import rearrange
 
 # helper functions
 

@@ -73,3 +73,41 @@ def test_hl_gauss_symlog():
     decoded = hl_gauss_loss.transform_from_probs(probs)
 
     assert torch.allclose(targets, decoded, atol = 1e-5)
+
+@param('running_stats', (False, True))
+def test_hl_gauss_symlog_flag(running_stats):
+    from hl_gauss_pytorch import HLGaussLayer
+
+    hl_gauss_kwargs = dict(use_symlog = True) if running_stats else dict(min_value = -100., max_value = 100., use_symlog = True)
+
+    hl_gauss_layer = HLGaussLayer(
+        dim = 128,
+        hl_gauss_loss_running_stats = dict(num_bins = 32, **hl_gauss_kwargs) if running_stats else None,
+        hl_gauss_loss = None if running_stats else dict(num_bins = 32, **hl_gauss_kwargs)
+    )
+
+    embed = torch.randn(7, 128)
+    targets = torch.randn(7) * 100
+
+    loss = hl_gauss_layer(embed, targets)
+    loss.backward()
+
+    pred_target = hl_gauss_layer(embed)
+
+    assert pred_target.shape == (7,)
+
+def test_hl_gauss_layer_mask_and_running_stats():
+    from hl_gauss_pytorch import HLGaussLayer
+
+    hl_gauss_layer = HLGaussLayer(
+        dim = 128,
+        hl_gauss_loss_running_stats = dict(num_bins = 32)
+    )
+
+    embed = torch.randn(7, 128)
+    targets = torch.randn(7)
+
+    loss = hl_gauss_layer(embed, targets, mask = torch.rand(7) > 0.3)
+    loss.backward()
+
+    assert loss.item() > 0.

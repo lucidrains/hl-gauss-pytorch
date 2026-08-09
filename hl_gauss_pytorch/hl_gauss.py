@@ -6,9 +6,9 @@ import torch
 from torch.special import erf
 import torch.nn.functional as F
 from torch import nn, tensor, linspace, is_tensor
-from torch.nn import Module, ModuleList
+from torch.nn import Module
 
-from torch_einops_utils import maybe
+from torch_einops_utils import maybe, masked_mean
 
 from einx import subtract, divide
 from einops import rearrange
@@ -31,6 +31,14 @@ def log(t, eps = 1e-20):
 def cast_tensor(t):
     return t if is_tensor(t) else tensor(t)
 
+# symlog / symexp transforms, as proposed in DreamerV3 https://arxiv.org/abs/2301.04104
+
+def symlog(t):
+    return t.sign() * (t.abs() + 1.).log()
+
+def symexp(t):
+    return t.sign() * (t.abs().exp() - 1.)
+
 # proposed gaussian histogram loss by Imani et al. https://arxiv.org/abs/1806.04613
 
 def HLGaussLoss(
@@ -43,9 +51,15 @@ def HLGaussLoss(
     clamp_to_range = False,
     min_max_value_on_bin_center = False,
     transform: Callable | None = None,
-    inverse_transform: Callable | None = None
+    inverse_transform: Callable | None = None,
+    use_symlog = False
 ):
     assert num_bins > 1, 'number of bins must be greater than 1'
+
+    if use_symlog:
+        assert not (exists(transform) or exists(inverse_transform)), 'either pass `use_symlog = True` or `transform` and `inverse_transform`, not both'
+        transform = symlog
+        inverse_transform = symexp
 
     min_value = maybe(transform)(cast_tensor(min_value)).item()
     max_value = maybe(transform)(cast_tensor(max_value)).item()
@@ -63,8 +77,7 @@ def HLGaussLoss(
         sigma_to_bin_ratio = sigma_to_bin_ratio,
         eps = eps,
         clamp_to_range = clamp_to_range,
-        transform = transform,
-        inverse_transform = inverse_transform
+        use_symlog = use_symlog
     )
 
     return loss_fn
@@ -82,14 +95,21 @@ class HLGaussLossFromSupport(Module):
         eps = 1e-10,
         clamp_to_range = False,
         transform: Callable | None = None,
-        inverse_transform: Callable | None = None
+        inverse_transform: Callable | None = None,
+        use_symlog = False
     ):
         super().__init__()
         self.eps = eps
-        self.transform = transform
-        self.inverse_transform = inverse_transform
+
+        if use_symlog:
+            assert not (exists(transform) or exists(inverse_transform)), 'either pass `use_symlog = True` or `transform` and `inverse_transform`, not both'
+            transform = symlog
+            inverse_transform = symexp
 
         assert exists(transform) == exists(inverse_transform), 'both `transform` and `inverse_transform` must be passed in if either is'
+
+        self.transform = transform
+        self.inverse_transform = inverse_transform
 
         if exists(transform):
             dummy_target = torch.randn(10) * 10
@@ -155,8 +175,7 @@ class HLGaussLossFromSupport(Module):
         logits,
         target = None,
         *,
-        mask = None,
-        reduction = None
+        mask = None
     ):
         return_loss = exists(target)
 
@@ -176,15 +195,8 @@ class HLGaussLossFromSupport(Module):
             logits = rearrange(logits, 'b ... l -> b l ...')
             target_probs = rearrange(target_probs, 'b ... l -> b l ...')
 
-        reduction = default(reduction, 'mean' if not exists(mask) else 'none')
-        loss = F.cross_entropy(logits, target_probs, reduction = reduction)
-
-        if not exists(mask):
-            return loss
-
-        loss = loss[mask]
-
-        return loss.mean()
+        loss = F.cross_entropy(logits, target_probs, reduction = 'none')
+        return masked_mean(loss, mask)
 
 # running stats using welford algorithm 1962
 
@@ -202,7 +214,7 @@ class RunningMeanVariance(Module):
         self.register_buffer('running_mean', tensor(100.))
         self.register_buffer('running_estimate_p', tensor(1.))
 
-    def reset_step(self, reset_value = 0.):
+    def reset_step(self, reset_value = 1.):
         self.step.copy_(reset_value)
 
     @property
@@ -250,7 +262,8 @@ class HLGaussLossFromRunningStats(Module):
         freeze_stats = False,
         clamp_to_range = False,
         transform: Callable | None = None,
-        inverse_transform: Callable | None = None
+        inverse_transform: Callable | None = None,
+        use_symlog = False
     ):
         super().__init__()
         assert num_bins >= (std_dev_range * 2)
@@ -260,6 +273,11 @@ class HLGaussLossFromRunningStats(Module):
         self.std_dev_range = std_dev_range
         self.clamp_to_range = clamp_to_range
         self.sigma_to_bin_ratio = sigma_to_bin_ratio
+
+        if use_symlog:
+            assert not (exists(transform) or exists(inverse_transform)), 'either pass `use_symlog = True` or `transform` and `inverse_transform`, not both'
+            transform = symlog
+            inverse_transform = symexp
 
         self.transform = transform
         self.inverse_transform = inverse_transform
@@ -291,6 +309,7 @@ class HLGaussLossFromRunningStats(Module):
         self,
         logits,
         target = None,
+        mask = None,
         freeze_stats = None
     ):
         freeze_stats = default(freeze_stats, self.freeze_stats)
@@ -300,7 +319,7 @@ class HLGaussLossFromRunningStats(Module):
             self.running_stats(stats_target)
             self.set_hl_gauss_loss_from_running()
 
-        return self.hl_gauss_loss(logits, target)
+        return self.hl_gauss_loss(logits, target, mask = mask)
 
 # a layer that contains a projection from the embedding of a network to the predicted bins
 
@@ -359,10 +378,6 @@ class HLGaussLayer(Module):
 
         self.has_aux_regress_loss = aux_regress_loss_weight > 0.
         self.aux_regress_loss_weight = aux_regress_loss_weight
-
-        # loss fn
-
-        self.loss_fn = self.hl_gauss_loss if use_classification else F.mse_loss
 
     def forward_mse_regression(
         self,
@@ -428,14 +443,17 @@ class HLGaussLayer(Module):
 
             return pred_value, logits
 
-        loss = self.hl_gauss_loss(logits, target, mask = mask, reduction = reduction)
+        loss = self.hl_gauss_loss(logits, target, mask = mask)
 
         if self.has_aux_regress_loss:
             assert not exists(mask)
 
-            pred_value = self.hl_gauss_loss(logits, reduction = reduction)
+            pred_value = self.hl_gauss_loss(logits)
             regress_loss = self.regress_loss_fn(pred_value, target, reduction = reduction)
 
             loss = loss + regress_loss * self.aux_regress_loss_weight
+
+        if return_value_and_logits:
+            return loss, logits
 
         return loss

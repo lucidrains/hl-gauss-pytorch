@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch import nn, tensor, linspace, is_tensor
 from torch.nn import Module
 
-from torch_einops_utils import maybe, masked_mean
+from torch_einops_utils import maybe, masked_reduce
 
 from einx import subtract, divide
 from einops import rearrange
@@ -175,7 +175,8 @@ class HLGaussLossFromSupport(Module):
         logits,
         target = None,
         *,
-        mask = None
+        mask = None,
+        reduction = None
     ):
         return_loss = exists(target)
 
@@ -196,7 +197,12 @@ class HLGaussLossFromSupport(Module):
             target_probs = rearrange(target_probs, 'b ... l -> b l ...')
 
         loss = F.cross_entropy(logits, target_probs, reduction = 'none')
-        return masked_mean(loss, mask)
+
+        if reduction == 'none':
+            return loss
+
+        reduction = default(reduction, 'mean')
+        return masked_reduce(loss, reduction, mask = mask)
 
 # running stats using welford algorithm 1962
 
@@ -310,7 +316,8 @@ class HLGaussLossFromRunningStats(Module):
         logits,
         target = None,
         mask = None,
-        freeze_stats = None
+        freeze_stats = None,
+        reduction = None
     ):
         freeze_stats = default(freeze_stats, self.freeze_stats)
 
@@ -319,7 +326,7 @@ class HLGaussLossFromRunningStats(Module):
             self.running_stats(stats_target)
             self.set_hl_gauss_loss_from_running()
 
-        return self.hl_gauss_loss(logits, target, mask = mask)
+        return self.hl_gauss_loss(logits, target, mask = mask, reduction = reduction)
 
 # a layer that contains a projection from the embedding of a network to the predicted bins
 
@@ -443,12 +450,12 @@ class HLGaussLayer(Module):
 
             return pred_value, logits
 
-        loss = self.hl_gauss_loss(logits, target, mask = mask)
+        loss = self.hl_gauss_loss(logits, target, mask = mask, reduction = reduction)
 
         if self.has_aux_regress_loss:
             assert not exists(mask)
 
-            pred_value = self.hl_gauss_loss(logits)
+            pred_value = self.hl_gauss_loss(logits, reduction = reduction)
             regress_loss = self.regress_loss_fn(pred_value, target, reduction = reduction)
 
             loss = loss + regress_loss * self.aux_regress_loss_weight

@@ -1,6 +1,6 @@
 [project]
 name = "hl-gauss-pytorch"
-version = "0.2.5"
+version = "0.2.6"
 description = "HL Gauss - Pytorch"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
@@ -26,7 +26,7 @@ dependencies = [
     "torch>=2.3",
     "einx>=0.3.0",
     "einops>=0.8.0",
-    "torch-einops-utils>=0.1.15",
+    "torch-einops-utils>=0.1.18",
 ]
 
 [project.urls]

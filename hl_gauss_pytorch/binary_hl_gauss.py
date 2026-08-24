@@ -67,12 +67,14 @@ class BinaryHLGaussLoss(Module):
 
         assert self.sigma > 0.
 
-        cdf_evals = erf(subtract('bins, ... -> ... bins', self.support, target) / self.sigma_times_sqrt_two)
+        # precision
+
+        cdf_evals = erf(subtract('bins, ... -> ... bins', self.support.double(), target.double()) / self.sigma_times_sqrt_two)
 
         z = cdf_evals[..., -1] - cdf_evals[..., 0]
         bin_prob = cdf_evals[..., -1] - cdf_evals[..., -2]
 
-        return bin_prob / z.clamp(min = eps)
+        return (bin_prob / z.clamp(min = eps)).float()
 
     def transform_from_probs(self, probs):
         probs = stack([1. - probs, probs], dim = -1)

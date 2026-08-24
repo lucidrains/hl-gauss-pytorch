@@ -96,6 +96,55 @@ def test_hl_gauss_symlog_flag(running_stats):
 
     assert pred_target.shape == (7,)
 
+def test_hl_gauss_explicit_transform_matches_use_symlog_flag():
+    from hl_gauss_pytorch import HLGaussLoss
+
+    def symlog(x):
+        return x.sign() * (x.abs() + 1.0).log()
+
+    def symexp(x):
+        return x.sign() * (x.abs().exp() - 1.0)
+
+    loss_fn_flag = HLGaussLoss(min_value = -100., max_value = 100., num_bins = 256, use_symlog = True)
+    loss_fn_transform = HLGaussLoss(min_value = -100., max_value = 100., num_bins = 256, transform = symlog, inverse_transform = symexp)
+
+    targets = torch.randn(100) * 5
+
+    probs_flag = loss_fn_flag.transform_to_probs(targets)
+    probs_transform = loss_fn_transform.transform_to_probs(targets)
+
+    assert torch.allclose(probs_flag, probs_transform, atol = 1e-6)
+
+    decoded = loss_fn_transform.transform_from_probs(probs_transform)
+    assert torch.allclose(targets, decoded, atol = 1e-3)
+
+def test_hl_gauss_out_of_range_targets():
+    from hl_gauss_pytorch import HLGaussLoss
+
+    loss_fn = HLGaussLoss(min_value = -100., max_value = 100., num_bins = 32)
+
+    logits = torch.randn(2, 32, requires_grad = True)
+    targets = torch.tensor([175., -175.])
+
+    probs = loss_fn.transform_to_probs(targets)
+    assert torch.allclose(probs.sum(dim = -1), torch.ones(2), atol = 1e-6)
+
+    loss = loss_fn(logits, targets)
+    assert loss.item() > 0.
+
+    loss.backward()
+    assert logits.grad is not None
+    assert logits.grad.abs().sum().item() > 0.
+
+def test_binary_hl_gauss_out_of_range_targets():
+    from hl_gauss_pytorch import BinaryHLGaussLoss
+
+    loss_fn = BinaryHLGaussLoss(sigma = 0.15)
+
+    probs = loss_fn.transform_to_probs(torch.tensor([2.4, -2.4]))
+
+    assert torch.allclose(probs, torch.tensor([1., 0.]), atol = 1e-7)
+
 def test_hl_gauss_layer_mask_and_running_stats():
     from hl_gauss_pytorch import HLGaussLayer
 

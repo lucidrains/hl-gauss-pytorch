@@ -77,7 +77,8 @@ def HLGaussLoss(
         sigma_to_bin_ratio = sigma_to_bin_ratio,
         eps = eps,
         clamp_to_range = clamp_to_range,
-        use_symlog = use_symlog
+        transform = transform,
+        inverse_transform = inverse_transform
     )
 
     return loss_fn
@@ -158,12 +159,14 @@ class HLGaussLossFromSupport(Module):
 
         assert self.sigma > 0.
 
-        cdf_evals = erf(subtract('bins, ... -> ... bins', self.support, target) / self.sigma_times_sqrt_two)
+        # precision
+
+        cdf_evals = erf(subtract('bins, ... -> ... bins', self.support.double(), target.double()) / self.sigma_times_sqrt_two)
 
         z = cdf_evals[..., -1] - cdf_evals[..., 0]
         bin_probs = cdf_evals[..., 1:] - cdf_evals[..., :-1]
 
-        return divide('... bins, ... -> ... bins', bin_probs, z.clamp(min = eps))
+        return divide('... bins, ... -> ... bins', bin_probs, z.clamp(min = eps)).float()
 
     def transform_from_probs(self, probs):
         pred_value = (probs * self.centers).sum(dim = -1)

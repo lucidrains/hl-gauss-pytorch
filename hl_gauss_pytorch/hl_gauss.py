@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Callable
+from contextlib import contextmanager
 from math import sqrt
 
 import torch
@@ -30,6 +31,10 @@ def log(t, eps = 1e-20):
 
 def cast_tensor(t):
     return t if is_tensor(t) else tensor(t)
+
+@contextmanager
+def precision_on_device(t):
+    yield torch.float32 if (exists(t) and t.device.type == 'mps') else torch.float64
 
 # symlog / symexp transforms, as proposed in DreamerV3 https://arxiv.org/abs/2301.04104
 
@@ -161,7 +166,8 @@ class HLGaussLossFromSupport(Module):
 
         # precision
 
-        cdf_evals = erf(subtract('bins, ... -> ... bins', self.support.double(), target.double()) / self.sigma_times_sqrt_two)
+        with precision_on_device(target) as dtype:
+            cdf_evals = erf(subtract('bins, ... -> ... bins', self.support.to(dtype), target.to(dtype)) / self.sigma_times_sqrt_two)
 
         z = cdf_evals[..., -1] - cdf_evals[..., 0]
         bin_probs = cdf_evals[..., 1:] - cdf_evals[..., :-1]

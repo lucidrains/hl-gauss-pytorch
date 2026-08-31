@@ -1,5 +1,6 @@
 from __future__ import annotations
 from math import sqrt
+from contextlib import contextmanager
 
 import torch
 from torch.special import erf
@@ -19,6 +20,10 @@ def default(v, d):
 
 def log(t, eps = 1e-20):
     return t.clamp(min = eps).log()
+
+@contextmanager
+def precision_on_device(t):
+    yield torch.float32 if (exists(t) and t.device.type == 'mps') else torch.float64
 
 # proposed gaussian histogram loss by Imani et al. https://arxiv.org/abs/1806.04613
 
@@ -69,7 +74,8 @@ class BinaryHLGaussLoss(Module):
 
         # precision
 
-        cdf_evals = erf(subtract('bins, ... -> ... bins', self.support.double(), target.double()) / self.sigma_times_sqrt_two)
+        with precision_on_device(target) as dtype:
+            cdf_evals = erf(subtract('bins, ... -> ... bins', self.support.to(dtype), target.to(dtype)) / self.sigma_times_sqrt_two)
 
         z = cdf_evals[..., -1] - cdf_evals[..., 0]
         bin_prob = cdf_evals[..., -1] - cdf_evals[..., -2]

@@ -9,14 +9,17 @@ import torch.nn.functional as F
 from torch import nn, tensor, linspace, is_tensor
 from torch.nn import Module
 
-from torch_einops_utils import maybe, masked_reduce
+from torch_einops_utils import maybe, once, masked_reduce
 
 from einx import subtract, divide
 from einops import rearrange
 
+from loguru import logger
+
 # constants
 
 DEFAULT_SIGMA_TO_BIN_RATIO = 2.
+DEFAULT_OUT_OF_RANGE_TOLERANCE_SIGMA = 1.
 
 # helper functions
 
@@ -57,7 +60,9 @@ def HLGaussLoss(
     min_max_value_on_bin_center = False,
     transform: Callable | None = None,
     inverse_transform: Callable | None = None,
-    use_symlog = False
+    use_symlog = False,
+    warn_out_of_range = True,
+    out_of_range_tolerance_sigma = DEFAULT_OUT_OF_RANGE_TOLERANCE_SIGMA
 ):
     assert num_bins > 1, 'number of bins must be greater than 1'
 
@@ -83,7 +88,9 @@ def HLGaussLoss(
         eps = eps,
         clamp_to_range = clamp_to_range,
         transform = transform,
-        inverse_transform = inverse_transform
+        inverse_transform = inverse_transform,
+        warn_out_of_range = warn_out_of_range,
+        out_of_range_tolerance_sigma = out_of_range_tolerance_sigma
     )
 
     return loss_fn
@@ -102,7 +109,9 @@ class HLGaussLossFromSupport(Module):
         clamp_to_range = False,
         transform: Callable | None = None,
         inverse_transform: Callable | None = None,
-        use_symlog = False
+        use_symlog = False,
+        warn_out_of_range = True,
+        out_of_range_tolerance_sigma = DEFAULT_OUT_OF_RANGE_TOLERANCE_SIGMA
     ):
         super().__init__()
         self.eps = eps
@@ -146,6 +155,28 @@ class HLGaussLossFromSupport(Module):
         self.register_buffer('centers', (support[:-1] + support[1:]) / 2, persistent = False)
         self.sigma_times_sqrt_two = sqrt(2.) * sigma
 
+        self.warn_out_of_range = warn_out_of_range
+        self.out_of_range_tolerance = float(sigma) * out_of_range_tolerance_sigma
+
+    @once
+    def maybe_warn_out_of_range(self, target):
+        if not self.warn_out_of_range or target.numel() == 0:
+            return False
+
+        deviation = (self.min_value - target).clamp(min = 0.) + (target - self.max_value).clamp(min = 0.)
+        max_deviation, index = deviation.flatten().max(dim = 0)
+
+        if max_deviation <= self.out_of_range_tolerance:
+            return False
+
+        out_of_range_value = target.flatten()[index].item()
+
+        logger.warning(
+            f'value of {out_of_range_value} is out of the support [{self.min_value}, {self.max_value}], overshooting by {max_deviation.item()}, beyond tolerance of {self.out_of_range_tolerance} - probability mass saturates on the edge bin, and the loss cannot regress such values accurately. consider widening the support or setting `warn_out_of_range = False`'
+        )
+
+        return True
+
     def transform_from_logits(self, logit):
         prob = logit.softmax(dim = -1)
         return self.transform_from_probs(prob)
@@ -156,6 +187,7 @@ class HLGaussLossFromSupport(Module):
 
     def transform_to_probs(self, target, eps = None):
         target = maybe(self.transform)(target)
+        self.maybe_warn_out_of_range(target)
 
         if self.clamp_to_range:
             target = target.clamp(min = self.min_value, max = self.max_value)
@@ -278,7 +310,9 @@ class HLGaussLossFromRunningStats(Module):
         clamp_to_range = False,
         transform: Callable | None = None,
         inverse_transform: Callable | None = None,
-        use_symlog = False
+        use_symlog = False,
+        warn_out_of_range = True,
+        out_of_range_tolerance_sigma = DEFAULT_OUT_OF_RANGE_TOLERANCE_SIGMA
     ):
         super().__init__()
         assert num_bins >= (std_dev_range * 2)
@@ -288,6 +322,9 @@ class HLGaussLossFromRunningStats(Module):
         self.std_dev_range = std_dev_range
         self.clamp_to_range = clamp_to_range
         self.sigma_to_bin_ratio = sigma_to_bin_ratio
+
+        self.warn_out_of_range = warn_out_of_range
+        self.out_of_range_tolerance_sigma = out_of_range_tolerance_sigma
 
         if use_symlog:
             assert not (exists(transform) or exists(inverse_transform)), 'either pass `use_symlog = True` or `transform` and `inverse_transform`, not both'
@@ -317,7 +354,9 @@ class HLGaussLossFromRunningStats(Module):
             sigma_to_bin_ratio = self.sigma_to_bin_ratio,
             clamp_to_range = self.clamp_to_range,
             transform = self.transform,
-            inverse_transform = self.inverse_transform
+            inverse_transform = self.inverse_transform,
+            warn_out_of_range = self.warn_out_of_range,
+            out_of_range_tolerance_sigma = self.out_of_range_tolerance_sigma
         )
 
     def forward(
